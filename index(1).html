@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BPKIHS MedPlanner (Group A)</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4f46e5">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="MedPlanner">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <link rel="icon" href="icons/icon-192.png">
+
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- Babel for in-browser JSX compilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        /* Custom scrollbar hiding utility */
+        .hidden-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hidden-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased selection:bg-indigo-200 selection:text-indigo-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo } = React;
+
+        // --- INLINE ICONS (Replacing lucide-react for standalone HTML) ---
+        const IconWrapper = ({ children, size = 24, className = "" }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                {children}
+            </svg>
+        );
+
+        const CalendarIcon = (props) => <IconWrapper {...props}><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></IconWrapper>;
+        const List = (props) => <IconWrapper {...props}><line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/></IconWrapper>;
+        const Calculator = (props) => <IconWrapper {...props}><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/></IconWrapper>;
+        const ChevronLeft = (props) => <IconWrapper {...props}><path d="m15 18-6-6 6-6"/></IconWrapper>;
+        const ChevronRight = (props) => <IconWrapper {...props}><path d="m9 18 6-6-6-6"/></IconWrapper>;
+        const CheckCircle = (props) => <IconWrapper {...props}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></IconWrapper>;
+        const XCircle = (props) => <IconWrapper {...props}><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></IconWrapper>;
+        const Clock = (props) => <IconWrapper {...props}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></IconWrapper>;
+        const Clock4 = Clock; // Alias
+        const MapPin = (props) => <IconWrapper {...props}><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></IconWrapper>;
+        const Edit3 = (props) => <IconWrapper {...props}><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></IconWrapper>;
+        const BookOpen = (props) => <IconWrapper {...props}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></IconWrapper>;
+        const Plus = (props) => <IconWrapper {...props}><path d="M5 12h14"/><path d="M12 5v14"/></IconWrapper>;
+        const Trash2 = (props) => <IconWrapper {...props}><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></IconWrapper>;
+
+
+        // --- HELPER FUNCTIONS ---
+        const getLocalYYYYMMDD = (d) => {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+
+        const getDeptColor = (dept) => {
+            const d = (dept || '').toLowerCase();
+            if (d.includes('derma')) return 'bg-pink-100 text-pink-700 border-pink-200';
+            if (d.includes('radio')) return 'bg-purple-100 text-purple-700 border-purple-200';
+            if (d.includes('gp') || d.includes('general practice')) return 'bg-teal-100 text-teal-700 border-teal-200';
+            if (d.includes('psych')) return 'bg-cyan-100 text-cyan-700 border-cyan-200';
+            if (d.includes('oral')) return 'bg-orange-100 text-orange-700 border-orange-200';
+            if (d.includes('anaes')) return 'bg-indigo-100 text-indigo-700 border-indigo-200';
+            if (d.includes('lab med') || d.includes('patho') || d.includes('bio')) return 'bg-rose-100 text-rose-700 border-rose-200';
+            if (d.includes('comm') || d.includes('sph')) return 'bg-lime-100 text-lime-700 border-lime-200';
+            // Check Lab Med/Patho/Bio before Medicine to prevent clash
+            if (d.includes('med') || d.includes('int. med')) return 'bg-blue-100 text-blue-700 border-blue-200'; 
+            if (d.includes('surg')) return 'bg-red-100 text-red-700 border-red-200';
+            if (d.includes('obst') || d.includes('obg')) return 'bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200';
+            if (d.includes('paed')) return 'bg-amber-100 text-amber-700 border-amber-200';
+            if (d.includes('ortho')) return 'bg-slate-100 text-slate-700 border-slate-200';
+            if (d.includes('ophthal')) return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+            if (d.includes('otor') || d.includes('ent')) return 'bg-violet-100 text-violet-700 border-violet-200';
+            if (d.includes('micro')) return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+            if (d.includes('emer')) return 'bg-red-50 text-red-800 border-red-200';
+            return 'bg-gray-100 text-gray-700 border-gray-200';
+        };
+
+        // --- ROTATION DETERMINATION LOGIC (GROUP A - ROLL 2344) ---
+        const getSYCSDept = (dateStr) => {
+            const d = new Date(dateStr);
+            if (d <= new Date('2026-08-18')) return 'Medicine';
+            if (d <= new Date('2026-09-22')) return 'Obst & Gynae';
+            if (d <= new Date('2026-11-01')) return 'Paediatrics';
+            return 'Surgery';
+        };
+
+        const getLIFDept = (dateStr) => {
+            const d = new Date(dateStr);
+            if (d <= new Date('2026-08-06')) return 'Community Medicine';
+            if (d <= new Date('2026-08-30')) return 'Psychiatry';
+            if (d <= new Date('2026-09-22')) return 'Otorhinolaryngology';
+            if (d <= new Date('2026-10-16')) return 'Ophthalmology';
+            if (d <= new Date('2026-11-20')) return 'Orthopaedics';
+            return 'Dermatology';
+        };
+
+        const getCBLDept = (dateStr) => {
+            const d = new Date(dateStr);
+            if (d <= new Date('2026-07-25')) return 'Anaesthesiology';
+            if (d <= new Date('2026-08-06')) return 'Radiology';
+            if (d <= new Date('2026-08-18')) return 'Oral Health';
+            if (d <= new Date('2026-08-29')) return 'Psychiatry';
+            if (d <= new Date('2026-09-09')) return 'GP & EM I';
+            if (d <= new Date('2026-09-22')) return 'GP & EM II';
+            if (d <= new Date('2026-10-07')) return 'Dermatology';
+            if (d <= new Date('2026-10-30')) return 'Emergency I';
+            if (d <= new Date('2026-11-19')) return 'Emergency II';
+            return 'Lab Medicine';
+        };
+
+        // --- BASE SCHEDULE DATA ---
+        const rawSchedule = [
+            ['2026-07-15', '08:00', '09:00', 'SIS', 'Intro to General Practice and patient centered care', 'GP & EM'],
+            ['2026-07-15', '09:00', '10:00', 'SIS', 'Structure and functions of the skin', 'Dermatology'],
+            ['2026-07-15', '14:00', '17:00', 'SGD', 'Batch wise SGD', 'Hospital/Wards'],
+            ['2026-07-16', '08:00', '09:00', 'SIS', 'Basic concept of anesthesia and pain relief', 'Anaesthesiology'],
+            ['2026-07-16', '09:00', '10:00', 'SIS', 'Intro to radiology & sectional imaging', 'Radiology'],
+            ['2026-07-17', '08:00', '09:00', 'SIS', 'Common Oral and Dental problems', 'Oral Health'],
+            ['2026-07-17', '09:00', '10:00', 'SIS', 'Scope and classification of psychiatry', 'Psychiatry'],
+            
+            ['2026-07-20', '08:00', '10:00', 'SYCS', 'Sharpen Your Clinical Skills', 'Medicine'],
+            ['2026-07-20', '14:00', '17:00', 'SEMINAR', 'Psychotropic drugs in clinical practice', 'Psychiatry, GP & EM'],
+            ['2026-07-21', '08:00', '09:00', 'SIS', 'Consulting skills', 'GP & EM'],
+            ['2026-07-21', '09:00', '10:00', 'SIS', 'Laboratory approach to a case of Anemia', 'Lab Medicine'],
+            ['2026-07-21', '10:00', '13:00', 'LIF', 'Visit to Inaruwa Hospital/BPKIHS', 'Community Medicine'],
+            ['2026-07-21', '14:00', '17:00', 'CBL', 'Case Based Learning in Hospital', 'Hospital'],
+            ['2026-07-22', '08:00', '09:00', 'SIS', 'Approach to making a diagnosis - probability mode', 'GP & EM'],
+            ['2026-07-22', '09:00', '10:00', 'SIS', 'Evaluation of basic skin lesion', 'Dermatology'],
+            ['2026-07-22', '14:00', '17:00', 'SGD', 'Batch wise SGD', 'Hospital/Wards'],
+            ['2026-07-23', '08:00', '09:00', 'SIS', 'Pre anesthetic check up & medication', 'Anaesthesiology'],
+            ['2026-07-23', '09:00', '10:00', 'SIS', 'Concepts of ionizing radiation, hazards & protection', 'Radiology'],
+            ['2026-07-24', '08:00', '09:00', 'SIS', 'Dental Anatomy, Nerve/Blood supply - Oral Path', 'Oral Health'],
+            ['2026-07-24', '09:00', '10:00', 'SIS', 'Psychiatric terminology', 'Psychiatry'],
+            
+            ['2026-07-27', '08:00', '10:00', 'SYCS', 'Sharpen Your Clinical Skills', 'Medicine'],
+            ['2026-07-27', '14:00', '17:00', 'SEMINAR', 'Connective tissue diseases - I', 'Dermatology'],
+            ['2026-07-28', '08:00', '13:00', 'FHE', 'Visit For Family Health Exercise', 'SPH & CM'],
+            ['2026-07-28', '14:00', '17:00', 'CBL', 'Case Based Learning in Hospital', 'Hospital'],
+            ['2026-07-29', '08:00', '09:00', 'SIS', 'Rational approach to management', 'GP & EM'],
+            ['2026-07-29', '09:00', '10:00', 'SIS', 'Bacterial infections of the skin', 'Dermatology'],
+            ['2026-07-29', '14:00', '17:00', 'SGD', 'Batch wise SGD', 'Hospital/Wards'],
+            ['2026-07-30', '08:00', '09:00', 'SIS', 'Drugs used in IV induction of anesthesia', 'Anaesthesiology'],
+            ['2026-07-30', '09:00', '10:00', 'SIS', 'Respiratory system I: Intro to imaging modalities', 'Radiology'],
+            ['2026-07-31', '08:00', '09:00', 'SIS', 'Dental plaque, plaque control & periodontal diseases', 'Oral Health'],
+            ['2026-07-31', '09:00', '10:00', 'SIS', 'Defense mechanism', 'Psychiatry'],
+            
+            // August
+            ['2026-08-03', '08:00', '10:00', 'SYCS', 'Sharpen Your Clinical Skills', 'Medicine'],
+            ['2026-08-03', '14:00', '17:00', 'SEMINAR', 'Snake bite', 'GP & EM, Anes'],
+            ['2026-08-04', '08:00', '09:00', 'SIS', 'Approach to a patient presenting with jaundice', 'GP & EM'],
+            ['2026-08-04', '09:00', '10:00', 'SIS', 'Laboratory approach to a case of Leukemia', 'Lab Medicine'],
+            ['2026-08-04', '10:00', '13:00', 'LIF', 'Visit to Inaruwa Hospital/BPKIHS', 'Community Medicine'],
+            ['2026-08-04', '14:00', '17:00', 'CBL', 'Case Based Learning in Hospital', 'Hospital'],
+            ['2026-08-05', '08:00', '09:00', 'SIS', 'Approach to a patient with pallor', 'GP & EM'],
+            ['2026-08-05', '09:00', '10:00', 'SIS', 'Cutaneous Tuberculosis', 'Dermatology'],
+            ['2026-08-05', '14:00', '17:00', 'SGD', 'Batch wise SGD', 'Hospital/Wards'],
+            ['2026-08-06', '08:00', '09:00', 'SIS', 'Inhalation agents used in anesthesia practice', 'Anaesthesiology'],
+            ['2026-08-06', '09:00', '10:00', 'SIS', 'Respiratory system II: chest X-ray', 'Radiology'],
+            ['2026-08-07', '08:00', '09:00', 'SIS', 'Dental caries and its sequelae I', 'Oral Health'],
+            ['2026-08-07', '09:00', '10:00', 'SIS', 'Organic mental disorders', 'Psychiatry'],
+            
+            ['2026-08-10', '08:00', '10:00', 'SYCS', 'Sharpen Your Clinical Skills', 'Medicine'],
+            ['2026-08-10', '14:00', '17:00', 'SEMINAR', 'Health care associated Infection', 'Microbiology'],
+            ['2026-08-11', '08:00', '13:00', 'FHE', 'Visit For Family Health Exercise', 'SPH & CM'],
+            ['2026-08-11', '14:00', '17:00', 'CBL', 'Case Based Learning in Hospital', 'Hospital'],
+            ['2026-08-12', '08:00', '09:00', 'SIS', 'Approach to a patient with chronic abdominal pain', 'GP & EM'],
+            ['2026-08-12', '09:00', '10:00', 'SIS', 'Cutaneous fungal infections', 'Dermatology'],
+            ['2026-08-12', '14:00', '17:00', 'SGD', 'Batch wise SGD', 'Hospital/Wards'],
+            ['2026-08-13', '08:00', '09:00', 'SIS', 'Neuromuscular blocking agents & its reversal', 'Anaesthesiology'],
+            ['2026-08-13', '09:00', '10:00', 'SIS', 'Respiratory system III: Interpretation', 'Radiology'],
+            ['2026-08-14', '08:00', '09:00', 'SIS', 'Dental caries and its sequelae II', 'Oral Health'],
+            ['2026-08-14', '09:00', '10:00', 'SIS', 'Schizophrenia & related disorders I', 'Psychiatry'],
+            
+            ['2026-08-17', '08:00', '10:00', 'SYCS', 'Sharpen Your Clinical Skills', 'Medicine'],
+            ['2026-08-17', '14:00', '17:00', 'SEMINAR', 'Sleep', 'Psychiatry, Physio, GP & EM'],
+            ['2026-08-18', '08:00', '09:00', 'SIS', 'Approach to a patient with acute abdominal pain', 'GP & EM'],
+            ['2026-08-18', '09:00', '10:00', 'SIS', 'Laboratory approach to Bleeding disorder', 'Lab Medicine'],
+            ['2026-08-18', '10:00', '13:00', 'LIF', 'Visit to Inaruwa Hospital/BPKIHS', 'Psychiatry'],
+            ['2026-08-18', '14:00', '17:00', 'CBL', 'Case Based Learning in Hospital', 'Hospital'],
+            ['2026-08-19', '08:00', '09:00', 'SIS', 'Approach to a patient with diarrhea & vomiting', 'GP & EM'],
+            ['2026-08-19', '09:00', '10:00', 'SIS', 'Cutaneous viral infections', 'Dermatology'],
+            ['2026-08-19', '14:00', '17:00', 'SGD', 'Batch wise SGD', 'Hospital/Wards'],
+            ['2026-08-20', '08:00', '09:00', 'SIS', 'Opioids and other pain medication', 'Anaesthesiology'],
+            ['2026-08-20', '09:00', '10:00', 'SIS', 'CVS-I: Intro to imaging modalities & interpretation', 'Radiology'],
+            ['2026-08-21', '08:00', '09:00', 'SIS', 'Intro to operative dentistry and endodontics', 'Oral Health'],
+            ['2026-08-21', '09:00', '10:00', 'SIS', 'Schizophrenia & related disorders II', 'Psychiatry'],
+            
+            ['2026-08-24', '08:00', '10:00', 'SYCS', 'Sharpen Your Clinical Skills', 'Obst & Gynae'],
+            ['2026-08-24', '14:00', '17:00', 'SEMINAR', 'Oxygen therapy', 'Anesthesiology'],
+            ['2026-08-25', '08:00', '09:00', 'SIS', 'Triaging, identification & management of ill children', 'GP & EM'],
+            ['2026-08-25', '09:00', '10:00', 'SIS', 'Role of cytology in early diagnosis of Cancer', 'Lab Medicine'],
+            ['2026-08-25', '10:00', '13:00', 'LIF', 'Visit to Inaruwa Hospital/BPKIHS', 'Psychiatry'],
+            ['2026-08-25', '14:00', '17:00', 'CBL', 'Case Based Learning in Hospital', 'Hospital'],
+            ['2026-08-26', '08:00', '09:00', 'SIS', 'Approach to a patient with acute chest pain', 'GP & EM'],
+            ['2026-08-26', '09:00', '10:00', 'SIS', 'Ectoparasitic infestations of the skin', 'Dermatology'],
+            ['2026-08-26', '14:00', '17:00', 'SGD', 'Batch wise SGD', 'Hospital/Wards'],
+            ['2026-08-27', '08:00', '09:00', 'SIS', 'Basic Hemodynamic monitoring', 'Anaesthesiology'],
+            ['2026-08-27', '09:00', '10:00', 'SIS', 'CVS-II: Normal and abnormal pulmonary vascularity', 'Radiology'],
+            ['2026-08-28', '08:00', '09:00', 'SIS', 'Local Anaesthesia in dentistry I', 'Oral Health'],
+            ['2026-08-28', '09:00', '10:00', 'SIS', 'Mood disorders I', 'Psychiatry'],
+            
+            ['2026-08-31', '08:00', '10:00', 'SYCS', 'Sharpen Your Clinical Skills', 'Obst & Gynae'],
+            ['2026-08-31', '14:00', '17:00', 'SEMINAR', 'Connective tissue diseases - II', 'Dermatology'],
+
+            // September
+            ['2026-09-01', '08:00', '09:00', 'SIS', 'Making sense of ECGs', 'GP & EM'],
+            ['2026-09-01', '09:00', '10:00', 'SIS', 'Role of histopathology in diagnosis', 'Lab Medicine'],
+            ['2026-09-01', '10:00', '13:00', 'LIF', 'Visit to Inaruwa Hospital/BPKIHS', 'Otorhinolaryngology'],
+            ['2026-09-01', '14:00', '17:00', 'CBL', 'Case Based Learning in Hospital', 'Hospital'],
+            ['2026-09-02', '08:00', '09:00', 'SIS', 'ACS', 'GP & EM'],
+            ['2026-09-02', '09:00', '10:00', 'SIS', 'Urticaria and angioedema', 'Dermatology'],
+            ['2026-09-02', '14:00', '17:00', 'SGD', 'Batch wise SGD', 'Hospital/Wards'],
+            ['2026-09-03', '08:00', '09:00', 'SIS', 'Recovery from anesthesia and post op management', 'Anaesthesiology'],
+            ['2026-09-03', '09:00', '10:00', 'SIS', 'CVS-III: Congenital and acquired heart disease', 'Radiology'],
+            ['2026-09-04', '08:00', '09:00', 'SIS', 'Local Anaesthesia in dentistry II', 'Oral Health'],
+            ['2026-09-04', '09:00', '10:00', 'SIS', 'Mood disorders II', 'Psychiatry'],
+            ['2026-09-07', '08:00', '10:00', 'SYCS', 'Sharpen Your Clinical Skills', 'Obst & Gynae'],
+            ['2026-09-07', '14:00', '17:00', 'SEMINAR', 'Acute gastroenteritis', 'GP & EM, Med, CM, Paed, Micro'],
+            ['2026-09-08', '08:00', '09:00', 'SIS', 'Approach to antenatal assessment', 'GP & EM'],
+            ['2026-09-08', '09:00', '10:00', 'SIS', 'Specimen collection, processing & automation', 'Lab Medicine'],
+            ['2026-09-08', '10:00', '13:00', 'LIF', 'Visit to Inaruwa Hospital/BPKIHS', 'Otorhinolaryngology'],
+            ['2026-09-08', '14:00', '17:00', 'CBL', 'Case Based Learning in Hospital', 'Hospital'],
+            ['2026-09-09', '08:00', '09:00', 'SIS', 'Approach to postnatal care and breastfeeding', 'GP & EM'],
+            ['2026-09-09', '09:00', '10:00', 'SIS', 'Eczemas I - Exogenous', 'Dermatology'],
+            ['2026-09-09', '14:00', '17:00', 'SGD', 'Batch wise SGD', 'Hospital/Wards'],
+            ['2026-09-10', '08:00', '09:00', 'SIS', 'Fluid therapy in perioperative period', 'Anaesthesiology'],
+            ['2026-09-10', '09:00', '10:00', 'SIS', 'Abdomen & GIT-I: Plain abdominal radiographs', 'Radiology'],
+            ['2026-09-11', '08:00', '09:00', 'SIS', 'Maxillofacial injuries I', 'Oral Health'],
+            ['2026-09-11', '09:00', '10:00', 'SIS', 'Anxiety disorders I', 'Psychiatry'],
+            ['2026-09-14', '08:00', '10:00', 'SYCS', 'Sharpen Your Clinical Skills', 'Obst & Gynae'],
+            ['2026-09-14', '14:00', '17:00', 'SEMINAR', 'Psychosomatic medicine', 'Psychiatry, Int. Med, GP & EM'],
+            ['2026-09-15', '08:00', '09:00', 'SIS', 'Sorting out breast problems', 'GP & EM'],
+            ['2026-09-15', '09:00', '10:00', 'SIS', 'Diabetes Mellitus - Lab diagnosis', 'Lab Medicine'],
+            ['2026-09-15', '10:00', '13:00', 'LIF', 'Visit to Inaruwa Hospital/BPKIHS', 'Otorhinolaryngology'],
+            ['2026-09-15', '14:00', '17:00', 'CBL', 'Case Based Learning in Hospital', 'Hospital'],
+            ['2026-09-16', '08:00', '09:00', 'SIS', 'Sorting out PV discharge and bleeding', 'GP & EM'],
+            ['2026-09-16', '09:00', '10:00', 'SIS', 'Eczemas II - Endogenous', 'Dermatology'],
+            ['2026-09-16', '14:00', '17:00', 'SGD', 'Batch wise SGD', 'Hospital/Wards'],
+            ['2026-09-17', '08:00', '09:00', 'SIS', 'Airway management', 'Anaesthesiology'],
+            ['2026-09-17', '09:00', '10:00', 'SIS', 'Abdomen & GIT-II: Imaging in acute abdomen', 'Radiology'],
+            ['2026-09-18', '08:00', '09:00', 'SIS', 'Maxillofacial injuries II', 'Oral Health'],
+            ['2026-09-18', '09:00', '10:00', 'SIS', 'Anxiety disorder & obsessive compulsive II', 'Psychiatry'],
+            ['2026-09-21', '08:00', '10:00', 'SYCS', 'Sharpen Your Clinical Skills', 'Obst & Gynae'],
+            ['2026-09-21', '14:00', '17:00', 'SEMINAR', 'Substance use & addictive disorders', 'Psychiatry, GP & EM'],
+            ['2026-09-22', '08:00', '09:00', 'SIS', 'Sorting out pelvic pain', 'GP & EM'],
+            ['2026-09-22', '09:00', '10:00', 'SIS', 'Thyroid Function Test', 'Lab Medicine'],
+            ['2026-09-22', '10:00', '13:00', 'LIF', 'Visit to Inaruwa Hospital/BPKIHS', 'Otorhinolaryngology'],
+            ['2026-09-22', '14:00', '17:00', 'CBL', 'Case Based Learning in Hospital', 'Hospital'],
+            ['2026-09-23', '08:00', '09:00', 'SIS', 'Approach to a patient with fits, faints - dizziness', 'GP & EM'],
+            ['2026-09-23', '09:00', '10:00', 'SIS', 'Papulosquamous disorders I: Lichen planus', 'Dermatology'],
+            ['2026-09-23', '14:00', '17:00', 'SGD', 'Batch wise SGD', 'Hospital/Wards'],
+            ['2026-09-24', '08:00', '09:00', 'SIS', 'Oxygen delivery devices and oxygen Therapy', 'Anaesthesiology'],
+            ['2026-09-24', '09:00', '10:00', 'SIS', 'Abdomen & GIT-III: Contrast studies', 'Radiology'],
+            ['2026-09-25', '08:00', '09:00', 'SIS', 'Oral and fascial spaces infection I', 'Oral Health'],
+            ['2026-09-25', '09:00', '10:00', 'SIS', 'Trauma & stressor related disorder', 'Psychiatry'],
+            ['2026-09-28', '08:00', '10:00', 'SYCS', 'Sharpen Your Clinical Skills', 'Paediatrics'],
+            ['2026-09-28', '14:00', '17:00', 'SEMINAR', 'Teamwork and Disaster Management', 'GP & EM, Surg, Anes, Ortho, CM, OBG'],
+            ['2026-09-29', '08:00', '09:00', 'SIS', 'Approach to patient with altered consciousness', 'GP & EM'],
+            ['2026-09-29', '09:00', '10:00', 'SIS', 'Liver Function Test', 'Lab Medicine'],
+            ['2026-09-29', '10:00', '13:00', 'LIF', 'Visit to Inaruwa Hospital/BPKIHS', 'Ophthalmology'],
+            ['2026-09-29', '14:00', '17:00', 'CBL', 'Case Based Learning in Hospital', 'Hospital'],
+            ['2026-09-30', '08:00', '09:00', 'SIS', 'Approach to seizure presentations', 'GP & EM'],
+            ['2026-09-30', '09:00', '10:00', 'SIS', 'Papulosquamous disorders II: Psoriasis', 'Dermatology'],
+            ['2026-09-30', '14:00', '17:00', 'SGD', 'Batch wise SGD', 'Hospital/Wards'],
+
+            // October
+            ['2026-10-01', '08:00', '09:00', 'SIS', 'Local anaesthesia & regional anaesthesia', 'Anaesthesiology'],
+            ['2026-10-01', '09:00', '10:00', 'SIS', 'Abdomen & GIT-IV: Pancreas & hepatobiliary', 'Radiology'],
+            ['2026-10-02', '08:00', '09:00', 'SIS', 'Oral and fascial spaces infection II', 'Oral Health'],
+            ['2026-10-02', '09:00', '10:00', 'SIS', 'Personality disorders', 'Psychiatry'],
+            ['2026-10-05', '08:00', '10:00', 'SYCS', 'Sharpen Your Clinical Skills', 'Paediatrics'],
+            ['2026-10-05', '14:00', '17:00', 'SEMINAR', 'Basic of acute & chronic pain management', 'Anesthesiology'],
+            ['2026-10-06', '08:00', '09:00', 'SIS', 'Approach to a patient presenting with headaches', 'GP & EM'],
+            ['2026-10-06', '09:00', '10:00', 'SIS', 'Renal Function Test', 'Lab Medicine'],
+            ['2026-10-06', '10:00', '13:00', 'LIF', 'Visit to Inaruwa Hospital/BPKIHS', 'Ophthalmology'],
+            ['2026-10-06', '14:00', '17:00', 'CBL', 'Case Based Learning in Hospital', 'Hospital'],
+            ['2026-10-07', '08:00', '09:00', 'SIS', 'Approach to a patient with fever', 'GP & EM'],
+            ['2026-10-07', '09:00', '10:00', 'SIS', 'Vesiculobullous disorders', 'Dermatology'],
+            ['2026-10-07', '14:00', '17:00', 'SGD', 'Batch wise SGD', 'Hospital/Wards'],
+            ['2026-10-08', '08:00', '09:00', 'SIS', 'Introduction of critical care management', 'Anaesthesiology'],
+            ['2026-10-08', '09:00', '10:00', 'SIS', 'Genitourinary-I: Imaging modalities', 'Radiology'],
+            ['2026-10-09', '08:00', '09:00', 'SIS', 'Odontogenic cysts and tumors I', 'Oral Health'],
+            ['2026-10-09', '09:00', '10:00', 'SIS', 'Substance use disorders', 'Psychiatry'],
+            ['2026-10-12', '08:00', '10:00', 'SYCS', 'Sharpen Your Clinical Skills', 'Paediatrics'],
+            ['2026-10-12', '14:00', '17:00', 'SEMINAR', 'Blood Transfusion', 'Anesthesiology, GP & EM, OBG, Surg'],
+            ['2026-10-13', '08:00', '09:00', 'SIS', 'Haematemesis and haemoptysis', 'GP & EM'],
+            ['2026-10-13', '09:00', '10:00', 'SIS', 'Risk factors of CAD and biomarkers of MI', 'Lab Medicine'],
+            ['2026-10-13', '10:00', '13:00', 'LIF', 'Visit to Inaruwa Hospital/BPKIHS', 'Ophthalmology'],
+            ['2026-10-13', '14:00', '17:00', 'CBL', 'Case Based Learning in Hospital', 'Hospital'],
+            ['2026-10-14', '08:00', '09:00', 'SIS', 'COPD', 'GP & EM'],
+            ['2026-10-14', '09:00', '10:00', 'SIS', 'Pigmentary disorders', 'Dermatology'],
+            ['2026-10-14', '14:00', '17:00', 'SGD', 'Batch wise SGD', 'Hospital/Wards'],
+            ['2026-10-15', '08:00', '09:00', 'SIS', 'Patient Safety and Quality Improvement', 'Anaesthesiology'],
+            ['2026-10-15', '09:00', '10:00', 'SIS', 'Genitourinary-II: Common pathology of GU system', 'Radiology'],
+            ['2026-10-16', '08:00', '09:00', 'SIS', 'Odontogenic cysts and tumors II', 'Oral Health'],
+            ['2026-10-16', '09:00', '10:00', 'SIS', 'Community and preventative psychiatry', 'Psychiatry'],
+            
+            // Dashain Holidays (No events)
+            
+            ['2026-10-26', '08:00', '10:00', 'SYCS', 'Sharpen Your Clinical Skills', 'Paediatrics'],
+            ['2026-10-26', '14:00', '17:00', 'SEMINAR', 'Cardio pulmonary resuscitation', 'Anesthesiology, Med, Paed, Surg, GP, Psych'],
+            ['2026-10-27', '08:00', '09:00', 'SIS', 'Asthma', 'GP & EM'],
+            ['2026-10-27', '09:00', '10:00', 'SIS', 'Quality management in clinical chemistry', 'Lab Medicine'],
+            ['2026-10-27', '10:00', '13:00', 'LIF', 'Visit to Inaruwa Hospital/BPKIHS', 'Orthopaedics'],
+            ['2026-10-27', '14:00', '17:00', 'CBL', 'Case Based Learning in Hospital', 'Hospital'],
+            ['2026-10-28', '08:00', '09:00', 'SIS', 'Common psychiatric presentations 1', 'GP & EM'],
+            ['2026-10-28', '09:00', '10:00', 'SIS', 'Disorders of sweat glands and sebaceous glands', 'Dermatology'],
+            ['2026-10-28', '14:00', '17:00', 'SGD', 'Batch wise SGD', 'Hospital/Wards'],
+            ['2026-10-29', '09:00', '10:00', 'SIS', 'MSK-I: Degenerative & inflammatory arthritis', 'Radiology'],
+            ['2026-10-30', '08:00', '09:00', 'SIS', 'Oral Potentially Malignant disorder I', 'Oral Health'],
+            ['2026-10-30', '09:00', '10:00', 'SIS', 'Child and Adolescent psychiatry disorders', 'Psychiatry'],
+
+            // November
+            ['2026-11-02', '08:00', '10:00', 'SYCS', 'Sharpen Your Clinical Skills', 'Surgery'],
+            ['2026-11-02', '14:00', '17:00', 'SEMINAR', 'Psychiatric Emergencies', 'Psychiatry, GP & EM'],
+            ['2026-11-03', '08:00', '09:00', 'SIS', 'Mental health and adolescence', 'GP & EM'],
+            ['2026-11-03', '09:00', '10:00', 'SIS', 'Sterilization, Disinfection in hospital', 'Lab Medicine'],
+            ['2026-11-03', '10:00', '13:00', 'LIF', 'Visit to Inaruwa Hospital/BPKIHS', 'Orthopaedics'],
+            ['2026-11-03', '14:00', '17:00', 'CBL', 'Case Based Learning in Hospital', 'Hospital'],
+            ['2026-11-04', '08:00', '09:00', 'SIS', 'Hypertension', 'GP & EM'],
+            ['2026-11-04', '09:00', '10:00', 'SIS', 'Hair and Nail disorders', 'Dermatology'],
+            ['2026-11-04', '14:00', '17:00', 'SGD', 'Batch wise SGD', 'Hospital/Wards'],
+            ['2026-11-05', '09:00', '10:00', 'SIS', 'MSK-II: Bone & Joint Infections', 'Radiology'],
+            ['2026-11-06', '08:00', '09:00', 'SIS', 'Oral Potentially Malignant disorder II', 'Oral Health'],
+            ['2026-11-06', '09:00', '10:00', 'SIS', 'Consultation-Liaison psychiatry', 'Psychiatry'],
+            
+            // Tihar Holidays (No events)
+            
+            ['2026-11-16', '08:00', '10:00', 'SYCS', 'Sharpen Your Clinical Skills', 'Surgery'],
+            ['2026-11-16', '14:00', '17:00', 'SEMINAR', 'Forensic Psychiatry', 'Psychiatry, FM, GP & EM'],
+            ['2026-11-17', '08:00', '09:00', 'SIS', 'Exam preparation', 'GP & EM'],
+            ['2026-11-17', '09:00', '10:00', 'SIS', 'Collection & transport of specimens', 'Lab Medicine'],
+            ['2026-11-17', '10:00', '13:00', 'LIF', 'Visit to Inaruwa Hospital/BPKIHS', 'Orthopaedics'],
+            ['2026-11-17', '14:00', '17:00', 'CBL', 'Case Based Learning in Hospital', 'Hospital'],
+            ['2026-11-18', '08:00', '09:00', 'SIS', 'Approach to lab diagnosis of FUO', 'Lab Medicine'],
+            ['2026-11-18', '09:00', '10:00', 'SIS', 'Common benign and malignant tumors of skin', 'Dermatology'],
+            ['2026-11-18', '14:00', '17:00', 'SGD', 'Batch wise SGD', 'Hospital/Wards'],
+            ['2026-11-19', '08:00', '09:00', 'SIS', 'Intrauterine infection (TORCH complex)', 'Lab Medicine'],
+            ['2026-11-19', '09:00', '10:00', 'SIS', 'MSK-III: Common metabolic bone disease', 'Radiology'],
+            ['2026-11-20', '08:00', '09:00', 'SIS', 'Oral Manifestations of systemic diseases I', 'Oral Health'],
+            ['2026-11-20', '09:00', '10:00', 'SIS', 'MSK-IV: Interpretation of common bone tumors', 'Radiology'],
+            ['2026-11-23', '08:00', '10:00', 'SYCS', 'Sharpen Your Clinical Skills', 'Surgery'],
+            ['2026-11-23', '14:00', '17:00', 'SEMINAR', 'Rehabilitation', 'Psychiatry, SPH & CM'],
+            ['2026-11-24', '08:00', '09:00', 'SIS', 'Interpretation of commonly performed serological tests', 'Lab Medicine'],
+            ['2026-11-24', '09:00', '10:00', 'SIS', 'Overview of obstetric imaging', 'Radiology'],
+            ['2026-11-24', '10:00', '13:00', 'LIF', 'Visit to Inaruwa Hospital/BPKIHS', 'Dermatology'],
+            ['2026-11-24', '14:00', '17:00', 'CBL', 'Case Based Learning in Hospital', 'Hospital'],
+            ['2026-11-25', '08:00', '09:00', 'SIS', 'Oral Manifestations of systemic diseases II', 'Oral Health'],
+            ['2026-11-25', '09:00', '10:00', 'SIS', 'Leprosy I - etiopathogenesis, classification', 'Dermatology'],
+            ['2026-11-25', '14:00', '17:00', 'SGD', 'Batch wise SGD', 'Hospital/Wards'],
+            ['2026-11-26', '08:00', '09:00', 'SIS', 'Antimicrobial resistance and containment', 'Lab Medicine'],
+            ['2026-11-26', '09:00', '10:00', 'SIS', 'Imaging modalities for thyroid, breast, testes', 'Radiology'],
+            ['2026-11-27', '08:00', '09:00', 'SIS', 'Temporomandibular Joint Disorders', 'Oral Health'],
+            ['2026-11-27', '09:00', '10:00', 'SIS', 'Leprosy II - complications & management', 'Dermatology'],
+            ['2026-11-30', '08:00', '10:00', 'SYCS', 'Sharpen Your Clinical Skills', 'Surgery'],
+            ['2026-11-30', '14:00', '17:00', 'SEMINAR', 'Pre/intra/post operative care', 'Anaesthesiology, Surgery, OBG'],
+
+            // December
+            ['2026-12-01', '08:00', '09:00', 'SIS', 'Sexually transmitted diseases I: Syphilis', 'Dermatology'],
+            ['2026-12-01', '09:00', '10:00', 'SIS', 'Intro to radiological contrast materials', 'Radiology'],
+            ['2026-12-01', '10:00', '13:00', 'LIF', 'Visit to Inaruwa Hospital/BPKIHS', 'Dermatology'],
+            ['2026-12-01', '14:00', '17:00', 'CBL', 'Case Based Learning in Hospital', 'Hospital'],
+            ['2026-12-02', '08:00', '09:00', 'SIS', 'School Oral Health Program', 'Oral Health'],
+            ['2026-12-02', '09:00', '10:00', 'SIS', 'Intro to imaging modalities for CNS', 'Radiology'],
+            ['2026-12-02', '14:00', '17:00', 'SGD', 'Batch wise SGD', 'Hospital/Wards'],
+            ['2026-12-03', '08:00', '09:00', 'SIS', 'Intro to Pediatric dentistry', 'Oral Health'],
+            ['2026-12-03', '09:00', '10:00', 'SIS', 'Intro to imaging modalities for PNS & Orbit', 'Radiology'],
+            ['2026-12-04', '08:00', '09:00', 'SIS', 'Intraoral maxillofacial prosthesis', 'Oral Health'],
+            ['2026-12-04', '09:00', '10:00', 'SIS', 'Imaging for arterial and venous system', 'Radiology'],
+            ['2026-12-07', '08:00', '10:00', 'SYCS', 'Sharpen Your Clinical Skills', 'Surgery'],
+            ['2026-12-07', '14:00', '17:00', 'SEMINAR', 'Open Seminar Topic', 'Unknown'],
+            ['2026-12-08', '08:00', '09:00', 'SIS', 'Extraoral maxillofacial prosthesis', 'Oral Health'],
+            ['2026-12-08', '09:00', '10:00', 'SIS', 'Sexually transmitted diseases II', 'Dermatology'],
+            ['2026-12-08', '10:00', '13:00', 'LIF', 'Visit to Inaruwa Hospital/BPKIHS', 'Dermatology'],
+            ['2026-12-08', '14:00', '17:00', 'CBL', 'Case Based Learning in Hospital', 'Hospital'],
+            ['2026-12-09', '08:00', '09:00', 'SIS', 'Intro to Orthodontics and Dentofacial', 'Oral Health'],
+            ['2026-12-09', '09:00', '10:00', 'SIS', 'Cutaneous manifestations of HIV/AIDS', 'Dermatology'],
+            ['2026-12-09', '14:00', '17:00', 'SGD', 'Batch wise SGD', 'Hospital/Wards']
+        ];
+
+        const initializeEvents = () => {
+            let events = [];
+            let idCounter = 1;
+            const uniqueDates = new Set();
+
+            rawSchedule.forEach(data => {
+                const title = data[4] ? data[4].trim() : '';
+                // FILTER: Ignore empty SIS or Seminars
+                if (!title || title === 'SIS:' || title === 'SEMINAR:') return; 
+
+                const date = data[0];
+                uniqueDates.add(date);
+                
+                let dept = data[5];
+                const category = data[3];
+
+                // DYNAMIC GROUP A ROUTING
+                if (category === 'SYCS') dept = getSYCSDept(date);
+                if (category === 'LIF' || category === 'FHE') dept = getLIFDept(date);
+                if (category === 'CBL' || category === 'SGD') dept = getCBLDept(date);
+
+                events.push({
+                    id: `evt_${idCounter++}`,
+                    date: date,
+                    startTime: data[1],
+                    endTime: data[2],
+                    category: category,
+                    title: title,
+                    dept: dept,
+                    attendance: null, // null | 'present' | 'absent'
+                    isRescheduled: false,
+                    isCancelled: false,
+                    isAdded: false
+                });
+            });
+
+            // CBL INJECTOR logic based on Generic Timetable rules (Mon, Thu, Fri 10-1)
+            uniqueDates.forEach(date => {
+                const d = new Date(date);
+                const day = d.getDay(); // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+                
+                if (day === 1 || day === 4 || day === 5) {
+                    // Don't inject if a CBL already exists for some reason
+                    const hasCBL = events.some(e => e.date === date && e.category === 'CBL');
+                    if (!hasCBL) {
+                        events.push({
+                            id: `evt_injected_${idCounter++}`,
+                            date: date,
+                            startTime: '10:00',
+                            endTime: '13:00',
+                            category: 'CBL',
+                            title: 'Case Based Learning in Hospital',
+                            dept: getCBLDept(date),
+                            attendance: null,
+                            isRescheduled: false,
+                            isCancelled: false,
+                            isAdded: false
+                        });
+                    }
+                }
+            });
+
+            return events;
+        };
+
+
+        // --- MAIN APP ---
+        function App() {
+            const [events, setEvents] = useState(() => {
+                try {
+                    const saved = localStorage.getItem('medplanner_events');
+                    if (saved) return JSON.parse(saved);
+                } catch (err) {
+                    console.error('Failed to load saved events:', err);
+                }
+                return initializeEvents();
+            });
+
+            React.useEffect(() => {
+                try {
+                    localStorage.setItem('medplanner_events', JSON.stringify(events));
+                } catch (err) {
+                    console.error('Failed to save events:', err);
+                }
+            }, [events]);
+
+            const [view, setView] = useState('day'); 
+            const [currentDate, setCurrentDate] = useState(new Date(2026, 6, 15)); // July 15, 2026
+            
+            // Modals
+            const [selectedEvent, setSelectedEvent] = useState(null);
+            const [isModalOpen, setIsModalOpen] = useState(false);
+            const [editMode, setEditMode] = useState(false);
+            
+            const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
+            // Tracker State
+            const [selectedCategories, setSelectedCategories] = useState(['SIS']);
+            const categories = Array.from(new Set(events.filter(e => !e.isAdded).map(e => e.category)));
+
+            // --- ACTIONS ---
+            const handleEventUpdate = (id, updates) => {
+                setEvents(events.map(e => e.id === id ? { ...e, ...updates } : e));
+            };
+
+            const handleReschedule = (id, newDate, newStart, newEnd) => {
+                handleEventUpdate(id, { date: newDate, startTime: newStart, endTime: newEnd, isRescheduled: true });
+                setEditMode(false);
+                setIsModalOpen(false);
+            };
+
+            const handleCancelEvent = (id) => {
+                handleEventUpdate(id, { isCancelled: true });
+                setEditMode(false);
+                setIsModalOpen(false);
+            };
+
+            const handleAddEvent = (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const newEvent = {
+                    id: `add_${Date.now()}`,
+                    date: formData.get('date'),
+                    startTime: formData.get('startTime'),
+                    endTime: formData.get('endTime'),
+                    category: formData.get('category').toUpperCase(),
+                    title: formData.get('title'),
+                    dept: formData.get('dept'),
+                    attendance: null,
+                    isRescheduled: false,
+                    isCancelled: false,
+                    isAdded: true
+                };
+                setEvents([...events, newEvent]);
+                setIsAddModalOpen(false);
+            };
+
+            // --- RENDERERS ---
+            const EventBadge = ({ event, onClick, isCompact = false }) => {
+                if (event.isCancelled) {
+                    return (
+                        <div onClick={() => onClick(event)} className="p-2 mb-1.5 text-sm rounded-lg border bg-gray-800 text-gray-300 border-gray-900 cursor-pointer opacity-70 flex flex-col">
+                            <div className="font-bold flex justify-between items-center mb-1 line-through">
+                                <span>{event.startTime} - {event.endTime}</span>
+                                <span className="px-1.5 py-0.5 rounded text-[10px] bg-gray-900 uppercase shrink-0">Cancelled</span>
+                            </div>
+                            <div className="font-semibold leading-tight line-through line-clamp-2">{event.title}</div>
+                        </div>
+                    );
+                }
+
+                // Determine Status Styling
+                let cardClass = "";
+                if (event.isAdded) cardClass = "bg-fuchsia-50 text-fuchsia-900 border-fuchsia-300 shadow-[0_0_10px_rgba(217,70,239,0.3)] border-2";
+                else if (event.attendance === 'present') cardClass = "bg-green-50 text-green-900 border-green-300 shadow-sm border-2";
+                else if (event.attendance === 'absent') cardClass = "bg-red-50 text-red-900 border-red-300 shadow-sm border-2";
+                else if (event.isRescheduled) cardClass = "bg-yellow-50 text-yellow-900 border-yellow-300 border-2";
+                else cardClass = "bg-blue-50 text-blue-900 border-blue-200 border";
+
+                const subjectColor = getDeptColor(event.dept);
+
+                return (
+                    <div 
+                        onClick={() => onClick(event)}
+                        className={`p-2.5 mb-2 text-sm rounded-xl cursor-pointer hover:shadow-md transition-all flex flex-col ${cardClass}`}
+                    >
+                        <div className="font-bold flex justify-between items-center mb-1">
+                            <span className="flex items-center gap-1"><Clock4 size={14}/> {event.startTime} - {event.endTime}</span>
+                            <span className={`px-2 py-0.5 rounded border text-[10px] uppercase font-black tracking-wider truncate max-w-[50%] ${subjectColor}`}>
+                                {event.dept.split(' ')[0]}
+                            </span>
+                        </div>
+                        <div className="font-bold leading-snug mb-1 line-clamp-2">{event.title}</div>
+                        {!isCompact && (
+                            <div className="text-xs font-semibold opacity-75 mt-auto flex items-center justify-between pt-1 overflow-hidden">
+                                <span className="flex items-center gap-1 truncate pr-2"><MapPin size={12} className="shrink-0"/> <span className="truncate">{event.dept}</span></span>
+                                <span className="bg-black/5 px-1.5 py-0.5 rounded text-gray-800 shrink-0">{event.category}</span>
+                            </div>
+                        )}
+                    </div>
+                );
+            };
+
+            const renderHeader = () => (
+                <div className="bg-indigo-600 text-white shadow-md rounded-b-2xl pb-4 shrink-0 relative z-10">
+                    <div className="p-4 flex flex-col md:flex-row justify-between items-center gap-4">
+                        <div>
+                            <h1 className="text-xl font-bold flex items-center gap-2">
+                                <BookOpen size={24} /> BPKIHS MedPlanner
+                            </h1>
+                            <p className="text-indigo-200 text-sm font-medium">Roll: 2344 (Aayush) • Group A • Batch A</p>
+                        </div>
+                        
+                        <div className="flex bg-indigo-700/50 p-1 rounded-xl backdrop-blur-sm overflow-x-auto max-w-full">
+                            {[
+                                { id: 'day', icon: Clock4, label: 'Day' },
+                                { id: 'week', icon: List, label: 'Week' },
+                                { id: 'month', icon: CalendarIcon, label: 'Month' },
+                                { id: 'attendance', icon: Calculator, label: 'Tracker' }
+                            ].map(btn => (
+                                <button 
+                                    key={btn.id}
+                                    onClick={() => setView(btn.id)} 
+                                    className={`px-3 py-1.5 text-sm rounded-lg flex items-center gap-1.5 transition-all font-bold ${view === btn.id ? 'bg-white text-indigo-700 shadow-md scale-105' : 'text-indigo-100 hover:bg-indigo-600/50'}`}
+                                >
+                                    <btn.icon size={16} /> {btn.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+
+            const renderDayView = () => {
+                const dateStr = getLocalYYYYMMDD(currentDate);
+                const dayEvents = events.filter(e => e.date === dateStr && !e.isCancelled).sort((a,b) => a.startTime.localeCompare(b.startTime));
+                
+                // UI SCALE FACTOR: 1 Hour = 90 pixels (fixes text overlap!)
+                const HOUR_HEIGHT = 90;
+                const MINUTE_HEIGHT = HOUR_HEIGHT / 60;
+
+                // Dynamic Hour Grid Calculation - Expands downwards if class goes late!
+                let maxHour = 17; // 5 PM default bottom limit
+                dayEvents.forEach(e => {
+                    const [eH, eM] = e.endTime.split(':').map(Number);
+                    const endingHour = eM > 0 ? eH + 1 : eH;
+                    if (endingHour > maxHour) maxHour = endingHour;
+                });
+
+                const totalHours = maxHour - 8 + 1;
+                const hours = Array.from({length: totalHours}).map((_, i) => i + 8);
+                const containerHeight = (totalHours * HOUR_HEIGHT) + 20; 
+
+                return (
+                    <div className="p-4 max-w-3xl mx-auto pb-24">
+                        <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                            <button onClick={() => {
+                                const newD = new Date(currentDate);
+                                newD.setDate(newD.getDate() - 1);
+                                setCurrentDate(newD);
+                            }} className="p-2 bg-indigo-50 text-indigo-600 rounded-full hover:bg-indigo-100">
+                                <ChevronLeft size={20} />
+                            </button>
+                            <div className="text-center">
+                                <h2 className="text-xl font-bold text-gray-800">
+                                    {currentDate.toLocaleDateString('default', { weekday: 'long', month: 'long', day: 'numeric' })}
+                                </h2>
+                            </div>
+                            <button onClick={() => {
+                                const newD = new Date(currentDate);
+                                newD.setDate(newD.getDate() + 1);
+                                setCurrentDate(newD);
+                            }} className="p-2 bg-indigo-50 text-indigo-600 rounded-full hover:bg-indigo-100">
+                                <ChevronRight size={20} />
+                            </button>
+                        </div>
+
+                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 relative overflow-hidden" style={{ minHeight: `${containerHeight}px`}}>
+                            {/* Time lines */}
+                            {hours.map(hour => (
+                                <div key={hour} className="flex border-t border-gray-100 relative" style={{ height: `${HOUR_HEIGHT}px` }}>
+                                    <span className="w-16 text-[10px] sm:text-xs font-bold text-gray-400 absolute -top-2.5 bg-white pr-2">{hour}:00</span>
+                                </div>
+                            ))}
+
+                            {/* Events Absolute Positioning */}
+                            {dayEvents.map(event => {
+                                const [sH, sM] = event.startTime.split(':').map(Number);
+                                const [eH, eM] = event.endTime.split(':').map(Number);
+                                
+                                const startOffset = ((sH - 8) * 60 + sM) * MINUTE_HEIGHT;
+                                const duration = ((eH - sH) * 60 + eM - sM) * MINUTE_HEIGHT;
+                                
+                                if(startOffset < 0) return null; // Before 8 AM
+
+                                let statusClass = "bg-blue-100 border-blue-300 text-blue-900 border";
+                                if (event.isAdded) statusClass = "bg-fuchsia-100 border-fuchsia-300 text-fuchsia-900 border-2 shadow-[0_0_10px_rgba(217,70,239,0.3)]";
+                                else if (event.attendance === 'present') statusClass = "bg-green-100 border-green-300 text-green-900 border-2 shadow-sm";
+                                else if (event.attendance === 'absent') statusClass = "bg-red-100 border-red-300 text-red-900 border-2 shadow-sm";
+                                else if (event.isRescheduled) statusClass = "bg-yellow-100 border-yellow-300 text-yellow-900 border-2";
+                                
+                                const deptStyle = getDeptColor(event.dept);
+
+                                return (
+                                    <div 
+                                        key={event.id}
+                                        onClick={() => { setSelectedEvent(event); setIsModalOpen(true); }}
+                                        className={`absolute left-16 right-4 rounded-xl p-2.5 overflow-hidden hover:shadow-md transition-shadow cursor-pointer flex flex-col ${statusClass}`}
+                                        style={{
+                                            top: `${startOffset + 16}px`, 
+                                            height: `${duration}px`,
+                                        }}
+                                    >
+                                        <div className="text-[10px] sm:text-xs font-black mb-0.5">{event.startTime} - {event.endTime}</div>
+                                        <div className="font-bold text-xs sm:text-sm leading-snug line-clamp-2 min-h-0">{event.title}</div>
+                                        <div className="mt-auto flex justify-between items-end pt-1 gap-2 overflow-hidden">
+                                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-black truncate ${deptStyle}`}>{event.dept}</span>
+                                            <span className="text-[10px] bg-black/5 px-1.5 py-0.5 rounded uppercase font-black text-gray-800 shrink-0">{event.category}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            };
+
+            const renderMonthView = () => {
+                const year = currentDate.getFullYear();
+                const month = currentDate.getMonth();
+                const firstDay = new Date(year, month, 1).getDay();
+                const daysInMonth = new Date(year, month + 1, 0).getDate();
+                
+                const days = [];
+                for (let i = 0; i < firstDay; i++) days.push(null);
+                for (let i = 1; i <= daysInMonth; i++) days.push(i);
+
+                return (
+                    <div className="p-4 max-w-5xl mx-auto pb-24">
+                        <div className="flex justify-between items-center mb-6 bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
+                            <button onClick={() => setCurrentDate(new Date(year, month - 1, 1))} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200">
+                                <ChevronLeft size={20} />
+                            </button>
+                            <h2 className="text-lg font-bold text-gray-800">
+                                {currentDate.toLocaleString('default', { month: 'long' })} {year}
+                            </h2>
+                            <button onClick={() => setCurrentDate(new Date(year, month + 1, 1))} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200">
+                                <ChevronRight size={20} />
+                            </button>
+                        </div>
+                        
+                        <div className="grid grid-cols-7 gap-1 sm:gap-2">
+                            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+                                <div key={d} className="text-center font-black text-gray-400 text-xs sm:text-sm py-2 uppercase tracking-wider">{d}</div>
+                            ))}
+                            {days.map((day, idx) => {
+                                if (!day) return <div key={idx} className="p-2"></div>;
+                                
+                                const d = new Date(year, month, day);
+                                const dateStr = getLocalYYYYMMDD(d);
+                                const dayEvents = events.filter(e => e.date === dateStr);
+                                
+                                return (
+                                    <div key={idx} className="border border-gray-100 rounded-xl p-1 sm:p-2 min-h-[100px] bg-white shadow-sm flex flex-col hover:border-indigo-200 transition-colors">
+                                        <span className={`text-xs sm:text-sm font-bold w-6 h-6 flex items-center justify-center rounded-full mb-1 ${getLocalYYYYMMDD(new Date()) === dateStr ? 'bg-indigo-600 text-white' : 'text-gray-700'}`}>
+                                            {day}
+                                        </span>
+                                        <div className="flex-1 overflow-y-auto hidden-scrollbar space-y-1">
+                                            {dayEvents.map(e => {
+                                                let pillClass = "bg-blue-50 text-blue-700 border-blue-200";
+                                                if (e.isCancelled) pillClass = "bg-gray-800 text-gray-400 line-through";
+                                                else if (e.isAdded) pillClass = "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200 border-2";
+                                                else if (e.attendance === 'present') pillClass = "bg-green-50 text-green-700 border-green-200";
+                                                else if (e.attendance === 'absent') pillClass = "bg-red-50 text-red-700 border-red-200";
+                                                else if (e.isRescheduled) pillClass = "bg-yellow-50 text-yellow-700 border-yellow-200";
+
+                                                return (
+                                                    <div 
+                                                        key={e.id} 
+                                                        onClick={() => { setSelectedEvent(e); setIsModalOpen(true); }}
+                                                        className={`w-full px-1.5 py-1 rounded text-[10px] sm:text-xs cursor-pointer truncate font-bold border ${pillClass}`}
+                                                    >
+                                                        {e.category}
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            };
+
+            const renderWeekView = () => {
+                const startOfWeek = new Date(currentDate);
+                startOfWeek.setDate(currentDate.getDate() - currentDate.getDay());
+                
+                const weekDays = Array.from({length: 7}).map((_, i) => {
+                    const d = new Date(startOfWeek);
+                    d.setDate(d.getDate() + i);
+                    return d;
+                });
+
+                return (
+                    <div className="p-4 max-w-3xl mx-auto pb-24">
+                        <div className="flex justify-between items-center mb-6 bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
+                            <button onClick={() => {
+                                const newD = new Date(currentDate);
+                                newD.setDate(newD.getDate() - 7);
+                                setCurrentDate(newD);
+                            }} className="p-2 bg-indigo-50 text-indigo-600 rounded-full hover:bg-indigo-100">
+                                <ChevronLeft size={20} />
+                            </button>
+                            <div className="text-center">
+                                <h2 className="text-lg font-bold text-gray-800">
+                                    Week of {startOfWeek.toLocaleDateString('default', { month: 'short', day: 'numeric' })}
+                                </h2>
+                                <p className="text-xs font-semibold text-gray-400">Tap a card to update status</p>
+                            </div>
+                            <button onClick={() => {
+                                const newD = new Date(currentDate);
+                                newD.setDate(newD.getDate() + 7);
+                                setCurrentDate(newD);
+                            }} className="p-2 bg-indigo-50 text-indigo-600 rounded-full hover:bg-indigo-100">
+                                <ChevronRight size={20} />
+                            </button>
+                        </div>
+
+                        <div className="space-y-6">
+                            {weekDays.map(date => {
+                                const dateStr = getLocalYYYYMMDD(date);
+                                const dayEvents = events.filter(e => e.date === dateStr).sort((a,b) => a.startTime.localeCompare(b.startTime));
+                                
+                                if (dayEvents.length === 0 && (date.getDay() === 0 || date.getDay() === 6)) return null;
+
+                                return (
+                                    <div key={dateStr} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                                        <div className="bg-slate-50 px-5 py-3 border-b border-gray-100 font-bold text-slate-800 flex justify-between items-center">
+                                            <span className="flex items-center gap-2">
+                                                {getLocalYYYYMMDD(new Date()) === dateStr && <span className="w-2 h-2 rounded-full bg-indigo-600"></span>}
+                                                {date.toLocaleDateString('default', { weekday: 'long' })}
+                                            </span>
+                                            <span className="text-slate-400 font-bold text-sm">{date.toLocaleDateString('default', { month: 'short', day: 'numeric' })}</span>
+                                        </div>
+                                        <div className="p-4">
+                                            {dayEvents.length > 0 ? (
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                    {dayEvents.map(e => (
+                                                        <EventBadge 
+                                                            key={e.id} 
+                                                            event={e} 
+                                                            onClick={(evt) => { setSelectedEvent(evt); setIsModalOpen(true); }} 
+                                                        />
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="text-sm font-bold text-slate-300 italic text-center py-6 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                                                    Enjoy the time off! No classes today.
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            };
+
+            const renderAttendanceCalculator = () => {
+                // Dynamic Filter: Ignore cancelled classes!
+                const relevantEvents = events.filter(e => 
+                    selectedCategories.includes(e.category) && 
+                    !e.isCancelled
+                );
+                
+                const totalScheduled = relevantEvents.length;
+                const pastConducted = relevantEvents.filter(e => e.attendance !== null).length;
+                const attended = relevantEvents.filter(e => e.attendance === 'present').length;
+                const absent = relevantEvents.filter(e => e.attendance === 'absent').length;
+                
+                const requiredFor80 = Math.ceil(totalScheduled * 0.8);
+                const buffer = totalScheduled - requiredFor80 - absent;
+
+                const toggleCategory = (cat) => {
+                    setSelectedCategories(prev => 
+                        prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]
+                    );
+                };
+
+                return (
+                    <div className="p-4 max-w-3xl mx-auto space-y-6 pb-24">
+                        
+                        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+                            <h3 className="font-bold text-gray-800 mb-2 flex items-center gap-2">
+                                <Calculator size={20} className="text-indigo-600"/> 
+                                Filter Categories
+                            </h3>
+                            <p className="text-sm font-medium text-gray-400 mb-5">Select categories to calculate combined 80% requirement (ignores cancelled classes, includes added ones):</p>
+                            
+                            <div className="flex flex-wrap gap-2">
+                                {categories.map(cat => (
+                                    <button
+                                        key={cat}
+                                        onClick={() => toggleCategory(cat)}
+                                        className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${selectedCategories.includes(cat) ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-50 text-gray-400 border border-gray-200 hover:bg-gray-100 hover:text-gray-600'}`}
+                                    >
+                                        {cat}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+                            <h3 className="font-black text-gray-800 mb-6 text-xl">Attendance Report</h3>
+                            
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center mb-8">
+                                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                    <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1">Total Sem</div>
+                                    <div className="text-3xl font-black text-slate-800">{totalScheduled}</div>
+                                </div>
+                                <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
+                                    <div className="text-[10px] font-black text-blue-500 uppercase tracking-wider mb-1">Conducted</div>
+                                    <div className="text-3xl font-black text-blue-800">{pastConducted}</div>
+                                </div>
+                                <div className="p-4 bg-green-50 rounded-2xl border border-green-100">
+                                    <div className="text-[10px] font-black text-green-500 uppercase tracking-wider mb-1">Attended</div>
+                                    <div className="text-3xl font-black text-green-800">{attended}</div>
+                                </div>
+                                <div className="p-4 bg-red-50 rounded-2xl border border-red-100">
+                                    <div className="text-[10px] font-black text-red-500 uppercase tracking-wider mb-1">Missed</div>
+                                    <div className="text-3xl font-black text-red-800">{absent}</div>
+                                </div>
+                            </div>
+
+                            <div className="border-t border-gray-100 pt-6 flex flex-col md:flex-row items-center justify-between gap-6">
+                                <div className="text-center md:text-left">
+                                    <div className="text-sm font-bold text-gray-400">Current Standing (Conducted)</div>
+                                    <div className="text-5xl font-black mt-2">
+                                        {pastConducted > 0 
+                                            ? <span className={(attended/pastConducted) >= 0.8 ? 'text-green-500' : 'text-red-500'}>
+                                                    {((attended / pastConducted) * 100).toFixed(1)}%
+                                                </span>
+                                            : <span className="text-gray-300">0.0%</span>}
+                                    </div>
+                                </div>
+
+                                <div className={`p-6 rounded-3xl flex-1 text-center w-full md:w-auto shadow-sm ${buffer > 0 ? 'bg-green-50 text-green-800 border border-green-200' : buffer === 0 ? 'bg-yellow-50 text-yellow-800 border border-yellow-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                                    <div className="font-black text-lg mb-2">80% Rule Forecast</div>
+                                    {totalScheduled === 0 ? (
+                                        <p className="text-sm font-medium">Select a category above.</p>
+                                    ) : buffer > 0 ? (
+                                        <p className="text-sm font-semibold">You can safely miss <strong className="text-xl bg-white/50 px-2 py-0.5 rounded-lg mx-1">{buffer}</strong> more class{buffer > 1 ? 'es' : ''} out of the remaining schedule.</p>
+                                    ) : buffer === 0 ? (
+                                        <p className="text-sm font-semibold">You are exactly on the line. You cannot afford to miss any more classes.</p>
+                                    ) : (
+                                        <p className="text-sm font-semibold">You are falling short. You must attend all remaining classes and somehow compensate for <strong className="text-xl bg-white/50 px-2 py-0.5 rounded-lg mx-1">{Math.abs(buffer)}</strong> class{Math.abs(buffer) > 1 ? 'es' : ''}.</p>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                );
+            };
+
+            const EventModal = () => {
+                if (!selectedEvent) return null;
+                
+                const [rsDate, setRsDate] = useState(selectedEvent.date);
+                const [rsStart, setRsStart] = useState(selectedEvent.startTime);
+                const [rsEnd, setRsEnd] = useState(selectedEvent.endTime);
+
+                const isCancelled = selectedEvent.isCancelled;
+                const isAdded = selectedEvent.isAdded;
+
+                return (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                        <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md overflow-hidden transform transition-all border border-gray-100">
+                            
+                            <div className={`${isCancelled ? 'bg-gray-800' : isAdded ? 'bg-fuchsia-600' : 'bg-indigo-600'} p-6 text-white flex justify-between items-start transition-colors`}>
+                                <div className="pr-4">
+                                    <span className={`px-3 py-1 rounded-lg text-xs font-black tracking-wider mb-3 inline-block shadow-sm ${isCancelled ? 'bg-gray-700 text-gray-300' : isAdded ? 'bg-fuchsia-500' : 'bg-indigo-500'}`}>
+                                        {selectedEvent.category} {isCancelled && '• CANCELLED'}
+                                    </span>
+                                    <h3 className={`text-2xl font-black leading-tight ${isCancelled && 'line-through opacity-70'}`}>{selectedEvent.title}</h3>
+                                </div>
+                                <button onClick={() => { setIsModalOpen(false); setEditMode(false); }} className={`hover:text-white p-2 rounded-full transition-colors ${isCancelled ? 'text-gray-400 bg-gray-700/50' : 'text-white/70 bg-black/20'}`}>
+                                    <XCircle size={24} />
+                                </button>
+                            </div>
+
+                            <div className="p-6">
+                                {!editMode ? (
+                                    <>
+                                        <div className={`space-y-4 mb-8 ${isCancelled && 'opacity-50'}`}>
+                                            <div className="flex items-center gap-4 text-slate-700 bg-slate-50 p-4 rounded-2xl">
+                                                <CalendarIcon size={22} className={isCancelled ? 'text-gray-400' : isAdded ? 'text-fuchsia-500' : 'text-indigo-500'} />
+                                                <span className="font-bold">{new Date(selectedEvent.date).toLocaleDateString('default', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                                            </div>
+                                            <div className="flex items-center gap-4 text-slate-700 bg-slate-50 p-4 rounded-2xl">
+                                                <Clock size={22} className={isCancelled ? 'text-gray-400' : isAdded ? 'text-fuchsia-500' : 'text-indigo-500'} />
+                                                <span className="font-bold">{selectedEvent.startTime} - {selectedEvent.endTime}</span>
+                                            </div>
+                                            <div className="flex items-center gap-4 text-slate-700 bg-slate-50 p-4 rounded-2xl">
+                                                <MapPin size={22} className={isCancelled ? 'text-gray-400' : isAdded ? 'text-fuchsia-500' : 'text-indigo-500'} />
+                                                <span className="font-bold">{selectedEvent.dept || 'N/A'}</span>
+                                            </div>
+                                        </div>
+
+                                        {!isCancelled && (
+                                            <div className="border-t border-slate-100 pt-6">
+                                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-4 text-center">Track Your Attendance</h4>
+                                                <div className="flex gap-4">
+                                                    <button 
+                                                        onClick={() => handleEventUpdate(selectedEvent.id, {attendance: 'present'})}
+                                                        className={`flex-1 py-4 rounded-3xl flex flex-col items-center justify-center gap-2 transition-all border-2 ${selectedEvent.attendance === 'present' ? 'bg-green-500 text-white border-green-500 shadow-lg shadow-green-500/30 scale-105' : 'bg-green-50 text-green-700 border-green-100 hover:bg-green-100'}`}
+                                                    >
+                                                        <CheckCircle size={28} />
+                                                        <span className="font-black">Present</span>
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => handleEventUpdate(selectedEvent.id, {attendance: 'absent'})}
+                                                        className={`flex-1 py-4 rounded-3xl flex flex-col items-center justify-center gap-2 transition-all border-2 ${selectedEvent.attendance === 'absent' ? 'bg-red-500 text-white border-red-500 shadow-lg shadow-red-500/30 scale-105' : 'bg-red-50 text-red-700 border-red-100 hover:bg-red-100'}`}
+                                                    >
+                                                        <XCircle size={28} />
+                                                        <span className="font-black">Absent</span>
+                                                    </button>
+                                                </div>
+                                                {selectedEvent.attendance && (
+                                                    <div className="text-center mt-4">
+                                                        <button onClick={() => handleEventUpdate(selectedEvent.id, {attendance: null})} className="text-sm font-bold text-slate-400 hover:text-slate-600">
+                                                            Clear Entry
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        <div className="mt-8 flex gap-3">
+                                            {!isCancelled && (
+                                                <button onClick={() => setEditMode(true)} className="flex-1 text-indigo-600 text-sm font-black flex items-center justify-center gap-2 p-4 bg-indigo-50 hover:bg-indigo-100 rounded-2xl transition-colors">
+                                                    <Edit3 size={18} /> Reschedule
+                                                </button>
+                                            )}
+                                            <button 
+                                                onClick={() => {
+                                                    if(isCancelled) handleEventUpdate(selectedEvent.id, {isCancelled: false});
+                                                    else handleCancelEvent(selectedEvent.id);
+                                                }} 
+                                                className={`flex-1 text-sm font-black flex items-center justify-center gap-2 p-4 rounded-2xl transition-colors ${isCancelled ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : 'bg-gray-800 text-white hover:bg-gray-900 shadow-lg shadow-gray-900/20'}`}
+                                            >
+                                                {isCancelled ? 'Restore Class' : <><Trash2 size={18}/> Cancel Class</>}
+                                            </button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    // EDIT MODE
+                                    <div className="space-y-5">
+                                        <h4 className="font-black text-slate-800 flex items-center gap-2 mb-4 text-xl">
+                                            <Edit3 size={24} className="text-indigo-600" /> Reschedule Class
+                                        </h4>
+                                        
+                                        <div>
+                                            <label className="block text-[10px] font-black text-slate-400 mb-2 uppercase tracking-wider">New Date</label>
+                                            <input 
+                                                type="date" 
+                                                value={rsDate}
+                                                onChange={(e) => setRsDate(e.target.value)}
+                                                className="w-full border-2 border-slate-200 p-4 rounded-2xl focus:outline-none focus:border-indigo-500 font-bold text-slate-700 transition-colors"
+                                            />
+                                        </div>
+                                        
+                                        <div className="flex gap-4">
+                                            <div className="flex-1">
+                                                <label className="block text-[10px] font-black text-slate-400 mb-2 uppercase tracking-wider">Start Time</label>
+                                                <input 
+                                                    type="time" 
+                                                    value={rsStart}
+                                                    onChange={(e) => setRsStart(e.target.value)}
+                                                    className="w-full border-2 border-slate-200 p-4 rounded-2xl focus:outline-none focus:border-indigo-500 font-bold text-slate-700 transition-colors"
+                                                />
+                                            </div>
+                                            <div className="flex-1">
+                                                <label className="block text-[10px] font-black text-slate-400 mb-2 uppercase tracking-wider">End Time</label>
+                                                <input 
+                                                    type="time" 
+                                                    value={rsEnd}
+                                                    onChange={(e) => setRsEnd(e.target.value)}
+                                                    className="w-full border-2 border-slate-200 p-4 rounded-2xl focus:outline-none focus:border-indigo-500 font-bold text-slate-700 transition-colors"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="flex gap-4 pt-6">
+                                            <button 
+                                                onClick={() => setEditMode(false)}
+                                                className="flex-1 py-4 bg-slate-100 text-slate-700 font-black rounded-2xl hover:bg-slate-200 transition-colors"
+                                            >
+                                                Back
+                                            </button>
+                                            <button 
+                                                onClick={() => handleReschedule(selectedEvent.id, rsDate, rsStart, rsEnd)}
+                                                className="flex-[2] py-4 bg-indigo-600 text-white font-black rounded-2xl hover:bg-indigo-700 shadow-lg shadow-indigo-600/30 transition-all"
+                                            >
+                                                Confirm Reschedule
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const AddEventModal = () => (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+                    <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md overflow-hidden transform transition-all border border-gray-100">
+                        <div className="bg-fuchsia-600 p-6 text-white flex justify-between items-start">
+                            <div>
+                                <span className="bg-fuchsia-500 px-3 py-1 rounded-lg text-xs font-black tracking-wider mb-2 inline-block shadow-sm">
+                                    EXTRA CLASS
+                                </span>
+                                <h3 className="text-2xl font-black leading-tight">Add Event</h3>
+                            </div>
+                            <button onClick={() => setIsAddModalOpen(false)} className="text-fuchsia-200 hover:text-white bg-fuchsia-700/50 p-2 rounded-full transition-colors">
+                                <XCircle size={24} />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleAddEvent} className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-[10px] font-black text-slate-400 mb-1.5 uppercase tracking-wider">Title / Topic</label>
+                                <input required name="title" placeholder="e.g. Extra Makeup Class" className="w-full border-2 border-slate-200 p-3.5 rounded-2xl focus:outline-none focus:border-fuchsia-500 font-bold text-slate-700 transition-colors" />
+                            </div>
+
+                            <div className="flex gap-4">
+                                <div className="flex-1">
+                                    <label className="block text-[10px] font-black text-slate-400 mb-1.5 uppercase tracking-wider">Category</label>
+                                    <select name="category" className="w-full border-2 border-slate-200 p-3.5 rounded-2xl focus:outline-none focus:border-fuchsia-500 font-bold text-slate-700 transition-colors bg-white">
+                                        {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                        <option value="OTHER">OTHER</option>
+                                    </select>
+                                </div>
+                                <div className="flex-1">
+                                    <label className="block text-[10px] font-black text-slate-400 mb-1.5 uppercase tracking-wider">Dept/Subject</label>
+                                    <input required name="dept" placeholder="e.g. Surgery" className="w-full border-2 border-slate-200 p-3.5 rounded-2xl focus:outline-none focus:border-fuchsia-500 font-bold text-slate-700 transition-colors" />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-[10px] font-black text-slate-400 mb-1.5 uppercase tracking-wider">Date</label>
+                                <input required type="date" name="date" defaultValue={getLocalYYYYMMDD(currentDate)} className="w-full border-2 border-slate-200 p-3.5 rounded-2xl focus:outline-none focus:border-fuchsia-500 font-bold text-slate-700 transition-colors" />
+                            </div>
+                            
+                            <div className="flex gap-4">
+                                <div className="flex-1">
+                                    <label className="block text-[10px] font-black text-slate-400 mb-1.5 uppercase tracking-wider">Start Time</label>
+                                    <input required type="time" name="startTime" defaultValue="14:00" className="w-full border-2 border-slate-200 p-3.5 rounded-2xl focus:outline-none focus:border-fuchsia-500 font-bold text-slate-700 transition-colors" />
+                                </div>
+                                <div className="flex-1">
+                                    <label className="block text-[10px] font-black text-slate-400 mb-1.5 uppercase tracking-wider">End Time</label>
+                                    <input required type="time" name="endTime" defaultValue="15:00" className="w-full border-2 border-slate-200 p-3.5 rounded-2xl focus:outline-none focus:border-fuchsia-500 font-bold text-slate-700 transition-colors" />
+                                </div>
+                            </div>
+
+                            <div className="pt-4">
+                                <button type="submit" className="w-full py-4 bg-fuchsia-600 text-white font-black rounded-2xl hover:bg-fuchsia-700 shadow-lg shadow-fuchsia-600/30 transition-all text-lg">
+                                    Add Class
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            );
+
+            return (
+                <div className="min-h-screen bg-slate-50 font-sans text-slate-800 flex flex-col relative">
+                    {renderHeader()}
+                    
+                    <main className="flex-1 overflow-y-auto">
+                        {view === 'day' && renderDayView()}
+                        {view === 'month' && renderMonthView()}
+                        {view === 'week' && renderWeekView()}
+                        {view === 'attendance' && renderAttendanceCalculator()}
+                    </main>
+
+                    {/* Floating Add Button */}
+                    <button 
+                        onClick={() => setIsAddModalOpen(true)}
+                        className="fixed bottom-6 right-6 p-4 bg-fuchsia-600 text-white rounded-full shadow-xl shadow-fuchsia-600/40 hover:scale-110 transition-transform z-40 focus:outline-none border-4 border-fuchsia-200/30"
+                    >
+                        <Plus size={32} strokeWidth={3} />
+                    </button>
+
+                    {isModalOpen && <EventModal />}
+                    {isAddModalOpen && <AddEventModal />}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').catch((err) => {
+                    console.error('Service worker registration failed:', err);
+                });
+            });
+        }
+    </script>
+</body>
+</html>
